@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SMS Spam Filter</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 720px; margin: 40px auto; padding: 0 16px; color: #1f2937; }
+  textarea { width: 100%; height: 110px; font-size: 15px; padding: 10px; box-sizing: border-box; }
+  button { padding: 8px 14px; margin: 8px 6px 0 0; cursor: pointer; }
+  .bar { height: 18px; background: #e5e7eb; border-radius: 9px; overflow: hidden; margin: 8px 0; }
+  .fill { height: 100%; }
+  .label { font-size: 20px; font-weight: 600; }
+  .msg span { padding: 2px 3px; border-radius: 4px; line-height: 2; }
+  .note { color: #6b7280; font-size: 13px; }
+  #result { margin-top: 24px; display: none; }
+</style>
+</head>
+<body>
+  <h1>SMS Spam Filter</h1>
+  <p class="note">Messages are scored in memory and are not stored.</p>
+  <textarea id="text" placeholder="Paste an SMS message..."></textarea>
+  <div>
+    <button onclick="score()"><b>Score message</b></button>
+    <button onclick="ex('WINNER!! You have won a £1000 cash prize. Call 09061701461 to claim now. 150p/min')">Spam example</button>
+    <button onclick="ex('Hey, are we still meeting at 6? I will bring the notes')">Ham example</button>
+    <button onclick="ex('W1NNER!! You have w0n a £1OOO c4sh prize. C4ll O9O617Ol46l to cl41m')">Disguised spam</button>
+    <button onclick="ex('Your account will be suspended within 24 hours due to suspicious activity. Click here to secure your account immediately.')">Possible phishing</button>
+  </div>
+
+  <div id="result">
+    <div class="label" id="label"></div>
+    <div class="bar"><div class="fill" id="fill"></div></div>
+    <div id="prob"></div>
+    <h3>Influential words</h3>
+    <p class="note">Red pushed towards spam, green towards ham. Stronger colour means more influence.</p>
+    <div class="msg" id="msg"></div>
+  </div>
+
+<script>
+function ex(t) { document.getElementById('text').value = t; score(); }
+function esc(s) { return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+async function score() {
+  const text = document.getElementById('text').value.trim();
+  if (!text) return;
+  const r = await fetch('/predict', { method: 'POST', headers: {'Content-Type': 'application/json'},
+                                      body: JSON.stringify({ text }) });
+  const d = await r.json();
+  const pct = (d.spam_probability * 100).toFixed(1);
+  const look = {
+    spam:       { text: '⛔ Spam: ',               color: '#b91c1c', bar: '#dc2626' },
+    suspicious: { text: '⚠ Possibly suspicious: ', color: '#b45309', bar: '#f59e0b' },
+    ham:        { text: '✓ Not spam: ',            color: '#15803d', bar: '#16a34a' },
+  }[d.label];
+  document.getElementById('result').style.display = 'block';
+  document.getElementById('label').textContent = look.text + d.action;
+  document.getElementById('label').style.color = look.color;
+  const fill = document.getElementById('fill');
+  fill.style.width = pct + '%';
+  fill.style.background = look.bar;
+  document.getElementById('prob').textContent =
+    `Spam probability: ${pct}%  (warning from ${(d.warn_threshold * 100).toFixed(0)}%, ` +
+    `spam folder from ${(d.threshold * 100).toFixed(0)}%, model: ${d.model})`;
+  const maxAbs = Math.max(...d.tokens.map(t => Math.abs(t.contribution)), 1e-6);
+  document.getElementById('msg').innerHTML = d.tokens.map(t => {
+    const a = Math.min(Math.abs(t.contribution) / maxAbs, 1) * 0.6;
+    const col = t.contribution > 0 ? `rgba(220,38,38,${a})` : `rgba(22,163,74,${a})`;
+    return `<span style="background:${col}" title="contribution ${t.contribution}">${esc(t.word)}</span>`;
+  }).join(' ');
+}
+</script>
+</body>
+</html>
